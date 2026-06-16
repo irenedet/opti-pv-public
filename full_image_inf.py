@@ -17,7 +17,15 @@ from PIL import Image
 from torchvision import transforms
 
 FILE = Path('__file__').absolute()
-sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
+ROOT = FILE.parents[0]
+sys.path.append(ROOT.as_posix())  # add yolov5/ to path
+
+CONFIG_DIR = ROOT / 'config'
+
+
+def load_inference_config(path=CONFIG_DIR / 'inference_config.yaml'):
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -289,8 +297,13 @@ def visualize_dets(img0, output, save_path, meta, **kwargs):
     return vis
 
 
-def run_stage2(path_to_images, weights2, output_dir='resultats_inference/'):
-    device = select_device(device='cpu')
+def run_stage2(path_to_images, weights2, inference_cfg=None, output_dir='resultats_inference/'):
+    if inference_cfg is None:
+        inference_cfg = load_inference_config()
+    s2 = inference_cfg['stage1']  # stage1 device is reused for stage2 model loading
+    s2_cfg = inference_cfg['stage2']
+
+    device = select_device(device=s2['device'])
     kwargs = dict(device=device)
     model, kwargs = prepare_model(weights2, **kwargs)
     meta = construct_model_meta(model, "confidence")
@@ -317,10 +330,10 @@ def run_stage2(path_to_images, weights2, output_dir='resultats_inference/'):
             kwargs['input_image_size'] = cfgs['img_size']
 
         kwargs.update({
-            'conf_threshold': 0.25,
-            'iou_threshold': 0.45,
-            'agnostic': False,
-            'sliding_window_step': [320, 320],
+            'conf_threshold': s2_cfg['conf_threshold'],
+            'iou_threshold': s2_cfg['iou_threshold'],
+            'agnostic': s2_cfg['agnostic'],
+            'sliding_window_step': s2_cfg['sliding_window_step'],
             'model': model,
         })
 
@@ -330,19 +343,23 @@ def run_stage2(path_to_images, weights2, output_dir='resultats_inference/'):
 
 
 def parse_opt():
+    cfg = load_inference_config()
+    s1 = cfg['stage1']
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='stage 1 model path(s)')
     parser.add_argument('--weights2', type=str, default='models/defect_detector.pt', help='stage 2 model path')
+    parser.add_argument('--config', type=str, default=str(CONFIG_DIR / 'inference_config.yaml'), help='inference config path')
     parser.add_argument('--source', type=str, default='data/images', help='file/dir/URL/glob, 0 for webcam')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
-    parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[s1['imgsz']], help='inference size h,w')
+    parser.add_argument('--conf-thres', type=float, default=s1['conf_thres'], help='confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=s1['iou_thres'], help='NMS IoU threshold')
+    parser.add_argument('--max-det', type=int, default=s1['max_det'], help='maximum detections per image')
+    parser.add_argument('--device', default=s1['device'], help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='show results')
-    parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-    parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
-    parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
+    parser.add_argument('--save-txt', default=s1['save_txt'], action='store_true', help='save results to *.txt')
+    parser.add_argument('--save-conf', default=s1['save_conf'], action='store_true', help='save confidences in --save-txt labels')
+    parser.add_argument('--save-crop', default=s1['save_crop'], action='store_true', help='save cropped prediction boxes')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
@@ -364,17 +381,18 @@ def parse_opt():
 def main(opt):
     print(colorstr('detect: ') + ', '.join(f'{k}={v}' for k, v in vars(opt).items()))
     check_requirements(exclude=('tensorboard', 'thop'))
-    boxlist, save_dir, save_crop, source = run(**{k: v for k, v in vars(opt).items() if k != 'weights2'})
+    inference_cfg = load_inference_config(opt.config)
+    skip_keys = {'weights2', 'config'}
+    boxlist, save_dir, save_crop, source = run(**{k: v for k, v in vars(opt).items() if k not in skip_keys})
 
     if save_crop:
-        # use the crops from stage 1 as input to stage 2
         crop_class_dir = str(save_dir) + '/crops/'
         class_dirs = [d for d in os.listdir(crop_class_dir) if os.path.isdir(os.path.join(crop_class_dir, d))]
         path_to_stage2_images = os.path.join(crop_class_dir, class_dirs[0]) if class_dirs else crop_class_dir
     else:
         path_to_stage2_images = source
 
-    run_stage2(path_to_stage2_images, weights2=opt.weights2)
+    run_stage2(path_to_stage2_images, weights2=opt.weights2, inference_cfg=inference_cfg)
 
 
 if __name__ == "__main__":

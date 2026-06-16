@@ -1,0 +1,15 @@
+stage1:
+  imgsz: 640
+  conf_thres: 0.60
+  iou_thres: 0.45
+  max_det: 1000
+  device: cpu
+  save_txt: true
+  save_conf: true
+  save_crop: true
+
+stage2:
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  agnostic: false
+  sliding_window_step: [320, 320]
