@@ -1,0 +1,5 @@
+colors: [[151, 221, 60]]
+names: [defect]
+nc: 1
+train: path/to/your/images/train
+val: path/to/your/images/val

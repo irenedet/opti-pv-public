@@ -1,0 +1,34 @@
+# Model weights
+*.pt
+*.onnx
+*.tflite
+*.pb
+
+# Datasets and images
+data/
+datasets/
+dummy/
+
+# Inference outputs
+runs/
+resultats_inference/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Env
+.env
+*.env
